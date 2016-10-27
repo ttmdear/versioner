@@ -1,70 +1,89 @@
 <?php
-namespace VersionValidator;
+namespace Versioner;
 
 class Semantic
 {
-    CONST NEED_UPGRADE = 'upgrade';
-    CONST NEED_DOWNGRADE = 'downgrade';
+    CONST UPGRADE = 'upgrade';
+    CONST DOWNGRADE = 'downgrade';
     CONST COMPATIBLE = 'compatible';
 
     private $version;
-    private $needVersion;
-    private $available = array();
+    private $available;
     private $separator = '.';
 
-    function __construct($version, $needVersion, $available = null)
+    function __construct($version, $available = array(), $separator = '.')
     {
         $this->version = $version;
-        $this->needVersion = $needVersion;
+        $this->separator = $separator;
+        $this->available = $available;
+        $separator = $this->separator;
 
-        if (!is_null($available)) {
-            $this->available = $available;
-        }
+        // i don not know why php warn that string is given to usort
+        @usort($this->available, function($a, $b) use($separator){
+            $a = explode($separator, $a);
+            $b = explode($separator, $b);
+            $max = max(array(count($a), count($b)));
+
+            $a = $this->fillArray($a, $max);
+            $b = $this->fillArray($b, $max);
+
+            for($i=0; $i<$max; $i++){
+                if ($a[$i] < $b[$i]) {
+                    return 1;
+                }elseif($a[$i] > $b[$i]){
+                    return -1;
+                }
+            }
+
+            return 0;
+        });
     }
 
-    public function valid()
+    public function valid($with)
     {
-        if ($this->analyze() === self::COMPATIBLE) {
+        if ($this->analyze($with) === self::COMPATIBLE) {
             return true;
         }
 
         return false;
     }
 
-    public function analyze()
+    public function analyze($with)
     {
         $version = explode($this->separator, $this->version);
-        $needVersion = explode($this->separator, $this->needVersion);
-        $max = max(array(count($version), count($needVersion)));
+        $with = explode($this->separator, $with);
+        $max = max(array(count($version), count($with)));
 
         $version = $this->fillArray($version, $max);
-        $needVersion = $this->fillArray($needVersion, $max);
+        $with = $this->fillArray($with, $max);
 
-        if ($version[0] < $needVersion[0]) {
-            return self::NEED_UPGRADE;
-        }elseif($version[0] > $needVersion[0]){
-            return self::NEED_DOWNGRADE;
+        if ($version[0] < $with[0]) {
+            // 1.2.3 : core
+            // 2.2.3 : need
+            // then core must be upgrade
+            return self::UPGRADE;
+        }elseif($version[0] > $with[0]){
+            return self::DOWNGRADE;
         }
 
         for($i=1; $i<$max; $i++){
-            if ($version[$i] < $needVersion[$i]) {
-                return self::NEED_UPGRADE;
+            if ($version[$i] < $with[$i]) {
+                // 1.2.3 : core
+                // 1.4.3 : need
+                // then core must be upgrade
+                return self::UPGRADE;
             }
         }
 
         return self::COMPATIBLE;
     }
 
-    public function getMatching()
+    public function getMatching($with)
     {
-        $available = $this->available;
-        rsort($available);
-        sort($available);
+        foreach ($this->available as $version) {
+            $semantic = new self($version, $with);
 
-        foreach ($available as $version) {
-            $semantic = new self($version, $this->needVersion);
-
-            if ($semantic->valid()) {
+            if ($semantic->valid($with)) {
                 return $version;
             }
         }
@@ -83,21 +102,4 @@ class Semantic
 
         return $array;
     }
-
-    public function setSeparator($separator)
-    {
-        $this->separator = $separator;
-        return $this;
-    }
-
-}
-
-$simple = new Semantic('2.4.1', '3.5.1', array('2.10.24', '1.2.1', '1.3.5', '1.1.1', '3.6.1', '2.30.1', '1.12.34'));
-
-if (!$simple->valid()) {
-    echo "Niepoprawny\n";
-
-    // todo : to delete
-    die(print_r($simple->getMatching(), true));
-    // endtodo
 }
